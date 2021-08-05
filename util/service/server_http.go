@@ -99,6 +99,88 @@ func NewGinServer() *gin.Engine {
 	return router
 }
 
+type HTTPRouter struct {
+	*httprouter.Router
+}
+
+// NewHTTPRouter returns a new initialized Router.
+// Path auto-correction, including trailing slashes, is enabled by default.
+func NewHTTPRouter() *HTTPRouter {
+	r := httprouter.New()
+	r.SaveMatchedRoutePath = true
+	return &HTTPRouter{r}
+}
+
+// GET is a shortcut for router.Handle(http.MethodGet, path, handle)
+func (r *HTTPRouter) GET(path string, handle httprouter.Handle) {
+	r.Handle(http.MethodGet, path, handle)
+}
+
+// HEAD is a shortcut for router.Handle(http.MethodHead, path, handle)
+func (r *HTTPRouter) HEAD(path string, handle httprouter.Handle) {
+	r.Handle(http.MethodHead, path, handle)
+}
+
+// OPTIONS is a shortcut for router.Handle(http.MethodOptions, path, handle)
+func (r *HTTPRouter) OPTIONS(path string, handle httprouter.Handle) {
+	r.Handle(http.MethodOptions, path, handle)
+}
+
+// POST is a shortcut for router.Handle(http.MethodPost, path, handle)
+func (r *HTTPRouter) POST(path string, handle httprouter.Handle) {
+	r.Handle(http.MethodPost, path, handle)
+}
+
+// PUT is a shortcut for router.Handle(http.MethodPut, path, handle)
+func (r *HTTPRouter) PUT(path string, handle httprouter.Handle) {
+	r.Handle(http.MethodPut, path, handle)
+}
+
+// PATCH is a shortcut for router.Handle(http.MethodPatch, path, handle)
+func (r *HTTPRouter) PATCH(path string, handle httprouter.Handle) {
+	r.Handle(http.MethodPatch, path, handle)
+}
+
+// DELETE is a shortcut for router.Handle(http.MethodDelete, path, handle)
+func (r *HTTPRouter) DELETE(path string, handle httprouter.Handle) {
+	r.Handle(http.MethodDelete, path, handle)
+}
+
+// Handle registers a new request handle with the given path and method.
+//
+// For GET, POST, PUT, PATCH and DELETE requests the respective shortcut
+// functions can be used.
+//
+// This function is intended for bulk loading and to allow the usage of less
+// frequently used, non-standardized or custom methods (e.g. for internal
+// communication with a proxy).
+func (r *HTTPRouter) Handle(method, path string, handle httprouter.Handle) {
+	r.Router.Handle(method, path, func(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
+
+		xtrace.SpanFromContext(req.Context()).SetOperationName(params.MatchedRoutePath())
+		handle(w, req, params)
+	})
+}
+
+// Handler is an adapter which allows the usage of an http.Handler as a
+// request handle.
+// The Params are available in the request context under ParamsKey.
+func (r *HTTPRouter) Handler(method, path string, handler http.Handler) {
+	r.Router.Handler(method, path, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+
+		if params, ok := req.Context().Value(httprouter.ParamsKey).(httprouter.Params); ok {
+			xtrace.SpanFromContext(req.Context()).SetOperationName(params.MatchedRoutePath())
+		}
+		handler.ServeHTTP(w, req)
+	}))
+}
+
+// HandlerFunc is an adapter which allows the usage of an http.HandlerFunc as a
+// request handle.
+func (r *HTTPRouter) HandlerFunc(method, path string, handler http.HandlerFunc) {
+	r.Handler(method, path, handler)
+}
+
 // HandlerFunc ...
 type HandlerFunc func(*Context)
 

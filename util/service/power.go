@@ -79,29 +79,10 @@ func (dr *driverBuilder) powerProcessorDriver(ctx context.Context, n string, p P
 	xlog.Infof(ctx, "%s processor: %s type: %s addr: %s", fun, n, reflect.TypeOf(driver), addr)
 
 	switch d := driver.(type) {
+	case *HTTPRouter:
+		return dr.powerHTTPRouter(ctx, n, addr, d.Router)
 	case *httprouter.Router:
-		var extraHttpMiddlewares []middleware
-		disableContextCancel := dr.isDisableContextCancel(ctx)
-		xlog.Infof(ctx, "%s disableContextCancel: %v, processor: %s", fun, disableContextCancel, n)
-		if disableContextCancel {
-			extraHttpMiddlewares = append(extraHttpMiddlewares, disableContextCancelMiddleware)
-		}
-
-		enableMetricMiddleware := dr.isEnableMetricMiddleware(ctx)
-		xlog.Infof(ctx, "%s enableMetricMiddleware: %v, processor: %s", fun, enableMetricMiddleware, n)
-		if enableMetricMiddleware {
-			extraHttpMiddlewares = append(extraHttpMiddlewares, metricMiddleware)
-		}
-
-		sa, err := powerHttp(addr, d, extraHttpMiddlewares...)
-		if err != nil {
-			return nil, err
-		}
-		servInfo := &ServInfo{
-			Type: PROCESSOR_HTTP,
-			Addr: sa,
-		}
-		return servInfo, nil
+		return dr.powerHTTPRouter(ctx, n, addr, d)
 
 	case thrift.TProcessor:
 		sa, err := powerThrift(addr, d)
@@ -151,6 +132,32 @@ func (dr *driverBuilder) powerProcessorDriver(ctx context.Context, n string, p P
 	default:
 		return nil, fmt.Errorf("processor: %s driver not recognition", n)
 	}
+}
+
+func (dr *driverBuilder) powerHTTPRouter(ctx context.Context, n string, addr string, router *httprouter.Router) (*ServInfo, error) {
+	fun := "driverBuilder.powerHTTPRouter"
+	var extraHttpMiddlewares []middleware
+	disableContextCancel := dr.isDisableContextCancel(ctx)
+	xlog.Infof(ctx, "%s disableContextCancel: %v, processor: %s", fun, disableContextCancel, n)
+	if disableContextCancel {
+		extraHttpMiddlewares = append(extraHttpMiddlewares, disableContextCancelMiddleware)
+	}
+
+	enableMetricMiddleware := dr.isEnableMetricMiddleware(ctx)
+	xlog.Infof(ctx, "%s enableMetricMiddleware: %v, processor: %s", fun, enableMetricMiddleware, n)
+	if enableMetricMiddleware {
+		extraHttpMiddlewares = append(extraHttpMiddlewares, metricMiddleware)
+	}
+
+	sa, err := powerHttp(addr, router, extraHttpMiddlewares...)
+	if err != nil {
+		return nil, err
+	}
+	servInfo := &ServInfo{
+		Type: PROCESSOR_HTTP,
+		Addr: sa,
+	}
+	return servInfo, nil
 }
 
 func powerHttp(addr string, router *httprouter.Router, middlewares ...middleware) (string, error) {
@@ -343,7 +350,7 @@ func reloadRouter(processor string, server interface{}, driver interface{}) erro
 func metricMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		ctx = contextWithErrCode(ctx,1)
+		ctx = contextWithErrCode(ctx, 1)
 		newR := r.WithContext(ctx)
 		path := r.URL.Path
 		path = ParseUriApi(path)
